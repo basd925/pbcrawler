@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>search</title>
+    <link href="styles/style.css" rel="stylesheet" type="text/css">s
+    <script src="scripts/search.js"></script>
+  </head>
+    <body>
+        <h1>Search the Bunny Run!!</h1>
+
+
+        <form id="frm1" action="">
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Site: <input type="url" name="site" value="" size="45"><br>
+        Terms: <input type="text" name="terms" value="">links to check (less than 100) <input type="number" name="num" size="4" value="10" min="1" max="99"><br><br>
+        </form><br>
+
+        <button onclick="getSearch()">Process</button>  <button onclick="slowAlert()">Update</button>    <button onclick="window.location.reload()">Clear</button><br><br> 
+
+        <p id="demo"></p>
+
+        <p id="demo1"></p>
+
+    </body>
+</html>
