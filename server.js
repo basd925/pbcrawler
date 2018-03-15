@@ -1,4 +1,12 @@
-//WARNING!!! No error recovery from bad url -- server crashes!
+//ver. 0.02.01 03/14/2018
+//DEFECT!! base url not updating to match page
+//DEFECT!! can't handle local link with no preceding / or ../
+//DEFECT!! "Visiting page http://www.lonelyplanet.com.cn/" stops search without error or completion???
+//DEFECT!! javascript; and tel: are "found" as protocols and stop search because of bad url
+//
+//03/13/2018 - increase max link to 1000
+//03/13/2018 - separate "found" into working.html, "not found" into working2.html
+//03/13/2018 - check for outbound links if search term found, local links if not found
 
 const http = require('http')
 const port = 3000
@@ -27,7 +35,6 @@ var t_url = new URL(START_URL);
 var baseUrl = t_url.protocol + "//" + t_url.hostname;
 
 
-
 var FAVICON = path.join(__dirname, 'public', 'favicon.ico');
 
 const requestHandler = (request, response) => {
@@ -43,12 +50,12 @@ const requestHandler = (request, response) => {
     
   if (typeof req_site !== 'undefined') {
     if (search_terms ===''){console.log('oops');fs.writeFileSync('public/working.html', '<html><body><b>oops, no search terms!</b></body></html>');return; }
-    console.log('xx_' + req_site + '_xx');
-    console.log('xx_' + search_terms + '_xx');
+    console.log(req_site);
+    console.log(search_terms);
     console.log(link_num);
     START_URL = req_site;
     SEARCH_WORD = search_terms;
-    if (link_num < 100){MAX_PAGES_TO_VISIT = link_num};
+    if (link_num < 1000){MAX_PAGES_TO_VISIT = link_num};
     numPagesVisited = 0;
     pagesVisited = {};
     pagesToVisit = [];
@@ -64,6 +71,7 @@ const requestHandler = (request, response) => {
 //delete old working.html and open new one
     
     fs.writeFileSync('public/working.html', '<html><body>Current Search:<br>');
+    fs.writeFileSync('public/working2.html', '<html><body>Current Search rejects:<br>');
 
 
     
@@ -82,6 +90,7 @@ const requestHandler = (request, response) => {
 
     body = '</body></html>';
     fs.appendFileSync('public/working.html', body);
+    fs.appendFileSync('public/working2.html', body);
     
 
   }
@@ -138,35 +147,6 @@ server.listen(port, (err) => {
 })
  
 
-function crawl1(req_site,search_terms){
-    console.log('howdy');
-    console.log(ii+10);
-
-//setup from crawler.js modified to use our site and search terms -- only if we have a search to do 
-    
-    
-    
-    req(req_site, function (error, response, body) {
-        console.log('error:', error); // Print the error if one occurred
-        console.log('statusCode:', response && response.statusCode); // Print the response status code if a response was received
-//        fs.writeFileSync('public/working.html', body);
-        var $ = cheerio.load(body);
-        var isWordFound = searchForWord($, search_terms);
-        if(isWordFound) {
-            body = 'Word "<b>' + search_terms + '"</b> found at page <a href=' + req_site + '>'+ req_site + '</a><br><br>';
-        }else{
-            body = 'Word <b>"' + search_terms + '"</b> not found at page ' + req_site + '<br><br>';           
-        }
-
-        console.log('body:', body); 
-        fs.appendFileSync('public/working.html', body);
-
-    });      
-
-    return;
-
-}
-
 function searchForWord1($, word) {
   var bodyText = $('html > body').text().toLowerCase();
   console.log(bodyText.indexOf(word.toLowerCase()));
@@ -181,6 +161,15 @@ function crawl() {
     return;
   }
   var nextPage = pagesToVisit.pop();
+  if (typeof nextPage ==='undefined'){console.log('no page');fs.appendFileSync('public/working.html', '<b>no more sites!</b>');return;}
+  var n_url = new URL(nextPage);
+  console.log('next page protocol is ' + n_url.protocol);
+  var nprotUrl = n_url.protocol;
+  if( nprotUrl ==='' ){
+    var i = nextPage.indexOf('/');
+    if(i > 0){nextPage = nextPage.substring(i);}
+    nextPage = baseUrl + nextPage;console.log("protocol: " + nprotUrl);
+    }
   if (nextPage in pagesVisited) {
     // We've already visited this page, so repeat the crawl
     crawl();
@@ -213,10 +202,12 @@ function visitPage(t_url, callback) {
        console.log('Word ' + SEARCH_WORD + ' found at page ' + t_url);
        body = 'Word "<b>' + SEARCH_WORD + '" found</b> at page <a href=' + t_url + '>'+ t_url + '</a><br>';
        fs.appendFileSync('public/working.html', body);
+//since found and we will look at site, let's not waste more time here.
        collectExternalLinks($);
      } else {
        body = 'Word "<b>' + SEARCH_WORD + '"</b> not found at page <a href=' + t_url + '>'+ t_url + '</a><br>';
-       fs.appendFileSync('public/working.html', body);
+       fs.appendFileSync('public/working2.html', body);
+//since word not found, let's check the rest of the website
        collectInternalLinks($);
      }
 //     fs.appendFileSync('public/working.html', body);
@@ -236,22 +227,42 @@ function searchForWord($, word) {
 //would it be more efficient to collect all links in one pass and separate them out?
 //note: will not pick up relative links that begin "../"
 
-function collectInternalLinks($) {
-    var relativeLinks = $("a[href^='/']");
-    console.log("Found " + relativeLinks.length + " relative links on page");
-    body = "Found " + relativeLinks.length + " relative links on page<br><br>";
-    fs.appendFileSync('public/working.html', body);
-    relativeLinks.each(function() {
-        pagesToVisit.push(baseUrl + $(this).attr('href'));
-    });
-}
+
 function collectExternalLinks($) {  
-    var externalLinks = $("a[href^='http']");
+//    var externalLinks = $("a[href^='http']");
+    var externalLinks = $('a');
     console.log("Found " + externalLinks.length + " outbound links on page");
     body = "Found " + externalLinks.length + " outbound links on page<br><br>";
     fs.appendFileSync('public/working.html', body);
     externalLinks.each(function() {
 //        pagesToVisit.push(baseUrl + $(this).attr('href'));
-        pagesToVisit.push($(this).attr('href'));
+        var test = $(this).attr('href');
+        var testUrl = new URL(test);
+
+        if(typeof test ==='undefined'){
+            
+        }else{
+            if(!(test.startsWith(baseUrl)) && !(testUrl.protocol='') ){pagesToVisit.push($(this).attr('href'));}
+        }
+    });
+}
+
+function collectInternalLinks($) {  
+//    var externalLinks = $("a[href^='http']");
+    var internalLinks = $('a');
+    console.log("Found " + internalLinks.length + " internal links on page");
+    body = "Found " + internalLinks.length + " internal links on page<br><br>";
+    fs.appendFileSync('public/working2.html', body);
+    internalLinks.each(function() {
+//        pagesToVisit.push(baseUrl + $(this).attr('href'));
+        var test = $(this).attr('href');
+        var testUrl = new URL(test);
+
+        if(typeof test ==='undefined'){
+            
+        }else{
+            if(test.startsWith(baseUrl)){pagesToVisit.push($(this).attr('href'));}
+            if(testUrl.protocol=''){pagesToVisit.push($(this).attr('href'));}
+        }
     });
 }
