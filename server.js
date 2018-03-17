@@ -1,15 +1,30 @@
-//ver. 0.02.01 03/14/2018
-//DEFECT!! base url not updating to match page
-//DEFECT!! can't handle local link with no preceding / or ../
-//DEFECT!! "Visiting page http://www.lonelyplanet.com.cn/" stops search without error or completion???
-//DEFECT!! javascript; and tel: are "found" as protocols and stop search because of bad url
+//ver. 0.02.04 03/17/2018
+//DEFECT!! not properly updating baseUrl - sometimes works, sometimes not
+//  this is because not adding domain when link is harvested, under internal links
+//  also, need to skip links when found, not at search time
+//DEFECT!! when word found, previously collected inbound links need to be skipped
+//DEFECT!! not closing html on working and working2 (but do we care?) 
+//need to consider sync/async issues
+//honor robots -- this may need a skip list array
+//divide up domains so we don't access same site repetitively and get blocked?
+//add timer
+//add stat analysis
+//refine feedback
+//import skip list from text file
 //
+//03/17/2018 - add search of a seedpage (or seedpages,if linked together).
+//03/17/2018 - skip bing, qwant, bing, youtube, videos, images
+//not sure we should skip wikipedia
+//03/16/2018 - skip 3dcartstores amazon, twitter, facebook, google
+//03/15/2018 - skip no response URLs
 //03/13/2018 - increase max link to 1000
 //03/13/2018 - separate "found" into working.html, "not found" into working2.html
 //03/13/2018 - check for outbound links if search term found, local links if not found
 
 const http = require('http')
 const port = 3000
+
+var version = '0.02.04';
 
 var req = require('request');
 var cheerio = require('cheerio');
@@ -49,7 +64,7 @@ const requestHandler = (request, response) => {
 
     
   if (typeof req_site !== 'undefined') {
-    if (search_terms ===''){console.log('oops');fs.writeFileSync('public/working.html', '<html><body><b>oops, no search terms!</b></body></html>');return; }
+    if (search_terms ===''){console.log('oops');fs.writeFileSync('public/working2.html', '<html><body><b>oops, no search terms!</b></body></html>');return; }
     console.log(req_site);
     console.log(search_terms);
     console.log(link_num);
@@ -75,18 +90,17 @@ const requestHandler = (request, response) => {
 
 
     
-// crawl loop, this is just a test loop for now. probably the loop will be in the crawl function
+// crawl loop, this is just a test loop for now. the actual loop is in the crawl function
 
 
     var i=1;
     while(i<2){
         console.log(i);
-//        crawl(req_site,search_terms);
         crawl()
         i++;
     }
 
-//crawl is done, finish working.html
+//crawl is done, finish working.html -- except this doesn't happen.  Why not???  No return from crawl()? (added the close to "no more sites" and "reached MAX"
 
     body = '</body></html>';
     fs.appendFileSync('public/working.html', body);
@@ -143,28 +157,27 @@ server.listen(port, (err) => {
     return console.log('something bad happened', err)
   }
 
-  console.log(`server is listening on ${port}`)
+  console.clear();
+  console.log(`pbcrawler ver. ` + version + ` is listening on ${port}`)
 })
  
 
-function searchForWord1($, word) {
-  var bodyText = $('html > body').text().toLowerCase();
-  console.log(bodyText.indexOf(word.toLowerCase()));
-  return(bodyText.indexOf(word.toLowerCase()) !== -1);
-}
-
-
 function crawl() {
   if(numPagesVisited >= MAX_PAGES_TO_VISIT) {
-    console.log("Reached max limit of number of pages to visit.");
-    fs.appendFileSync('public/working.html', '<b>Reached max limit of number of pages to visit.</b>');
+    console.log("Reached max limit number of pages (" + MAX_PAGES_TO_VISIT + ") to visit.");
+    fs.appendFileSync('public/working.html', '<b>Reached max limit number of pages ' + MAX_PAGES_TO_VISIT + ' to visit.</b></body></html>');
     return;
   }
   var nextPage = pagesToVisit.pop();
-  if (typeof nextPage ==='undefined'){console.log('no page');fs.appendFileSync('public/working.html', '<b>no more sites!</b>');return;}
-  var n_url = new URL(nextPage);
-  console.log('next page protocol is ' + n_url.protocol);
-  var nprotUrl = n_url.protocol;
+//update the baseURL
+  if (typeof nextPage ==='undefined'){console.log('no page');fs.appendFileSync('public/working.html', '<b>no more sites!</b></body></html>');return;}
+  t_url = new URL(nextPage);
+  console.log("new url " + t_url);
+  if(nextPage.startsWith("http")){baseUrl = t_url.protocol + "//" + t_url.hostname;}
+  console.log(baseUrl);
+//  var n_url = new URL(nextPage);
+  console.log('next page protocol is ' + t_url.protocol);
+  var nprotUrl = t_url.protocol;
   if( nprotUrl ==='' ){
     var i = nextPage.indexOf('/');
     if(i > 0){nextPage = nextPage.substring(i);}
@@ -185,36 +198,48 @@ function visitPage(t_url, callback) {
   numPagesVisited++;
 
   // Make the request
-  if (typeof t_url ==='undefined'){console.log('no page');fs.appendFileSync('public/working.html', '<b>no more sites!</b>');return;}
+  if (typeof t_url ==='undefined'){console.log('no page');fs.appendFileSync('public/working.html', '<b>no more sites!</b></body></html>');return;}
   console.log("Visiting page " + t_url);
   req(t_url, function(error, response, body) {
      // Check status code (200 is HTTP OK)
-  if (typeof response ==='undefined'){console.log('no response');fs.appendFileSync('public/working.html', '<b>oops, defective url!</b>');return;}
-     console.log("Status code: " + response.statusCode);
-     if(response.statusCode !== 200) {
-       callback();
-       return;
-     }
-     // Parse the document body
-     var $ = cheerio.load(body);
-     var isWordFound = searchForWord($, SEARCH_WORD);
-     if(isWordFound) {
-       console.log('Word ' + SEARCH_WORD + ' found at page ' + t_url);
-       body = 'Word "<b>' + SEARCH_WORD + '" found</b> at page <a href=' + t_url + '>'+ t_url + '</a><br>';
-       fs.appendFileSync('public/working.html', body);
-//since found and we will look at site, let's not waste more time here.
-       collectExternalLinks($);
-     } else {
-       body = 'Word "<b>' + SEARCH_WORD + '"</b> not found at page <a href=' + t_url + '>'+ t_url + '</a><br>';
-       fs.appendFileSync('public/working2.html', body);
-//since word not found, let's check the rest of the website
-       collectInternalLinks($);
-     }
-//     fs.appendFileSync('public/working.html', body);
-//   collectInternalLinks($); was formerly here -- my concept is to collect outward links when the search term is found, browse deeper on the site when not found
-//   but then do we need a way to come back and study the site where found? -- if we are going to manually read the page, we will see the related inbound links ...
-       // In this short program, our callback is just calling crawl()
-       callback();
+    if (typeof response ==='undefined'){
+        console.log('no response');fs.appendFileSync('public/working2.html', '<b>oops, defective url!<br><br></b>');
+        callback();
+        return;
+    }else{
+        console.log("Status code: " + response.statusCode);
+        if(response.statusCode !== 200) {
+        callback();
+        return;
+        }
+        // Parse the document body
+        var $ = cheerio.load(body);
+//load links from any page containing "pbseedpage" -- allows us to build seed pages
+        var isWordFound = searchForWord($,'pbseedpage');
+        if (!(isWordFound)){
+//if not a seedpage, look for search term
+            isWordFound = searchForWord($, SEARCH_WORD);
+        }
+        if(isWordFound) {
+        console.log('Word ' + SEARCH_WORD + ' found at page ' + t_url);
+        body = 'Word "<b>' + SEARCH_WORD + '" found</b> at page <a href=' + t_url + '>'+ t_url + '</a><br>';
+        fs.appendFileSync('public/working.html', body);
+    //since found and we will look at site, let's not waste more time here.
+        collectExternalLinks($);
+        } else {
+        body = 'Word "<b>' + SEARCH_WORD + '"</b> not found at page <a href=' + t_url + '>'+ t_url + '</a><br>';
+        console.log('Word ' + SEARCH_WORD + ' not found at page ' + t_url);
+        fs.appendFileSync('public/working2.html', body);
+    //since word not found, let's check the rest of the website
+        collectInternalLinks($);
+        }
+    //     fs.appendFileSync('public/working.html', body);
+    //   collectInternalLinks($); was formerly here -- my concept is to collect outward links when the search term is found, browse deeper on the site when not found
+    //   but then do we need a way to come back and study the site where found? -- if we are going to manually read the page, we will see the related inbound links ...
+        // In this short program, our callback is just calling crawl()
+        callback();
+        return;
+    }
   });
 }
 
@@ -240,9 +265,24 @@ function collectExternalLinks($) {
         var testUrl = new URL(test);
 
         if(typeof test ==='undefined'){
-            
+            return;
         }else{
-            if(!(test.startsWith(baseUrl)) && !(testUrl.protocol='') ){pagesToVisit.push($(this).attr('href'));}
+            if(test.indexOf("3dcartstores") !== -1){console.log("skipping 3dcartstores");return;}
+            if(test.indexOf("amazon.com") !== -1){console.log("skipping amazon");return;}
+            if(test.indexOf("bing") !== -1){console.log("skipping bing");return;}
+            if(test.indexOf("duckgo") !== -1){console.log("skipping duckduckgo");return;}
+            if(test.indexOf("facebook") !== -1){console.log("skipping facebook");return;}         
+            if(test.indexOf("google") !== -1){console.log("skipping google");return;}
+            if(test.indexOf("qwant") !== -1){console.log("skipping qwant");return;}
+            if(test.indexOf("youtube") !== -1){console.log("skipping youtube");return;}
+            if(test.indexOf("image") !== -1){console.log("skipping image");return;}
+            if(test.indexOf(".png") !== -1){console.log("skipping image");return;}
+            if(test.indexOf(".gif") !== -1){console.log("skipping image");return;}
+            if(test.indexOf(".jpg") !== -1){console.log("skipping image");return;}
+            if(test.indexOf(".jpeg") !== -1){console.log("skipping image");return;}
+            if(test.indexOf("video") !== -1){console.log("skipping video");return;}
+
+            if(!(test.startsWith(baseUrl)) && !(testUrl.protocol ==='') ){pagesToVisit.push($(this).attr('href'));}
         }
     });
 }
@@ -261,8 +301,34 @@ function collectInternalLinks($) {
         if(typeof test ==='undefined'){
             
         }else{
-            if(test.startsWith(baseUrl)){pagesToVisit.push($(this).attr('href'));}
-            if(testUrl.protocol=''){pagesToVisit.push($(this).attr('href'));}
+            if(test.indexOf(".png") !== -1){console.log("skipping image");return;}
+            if(test.indexOf(".gif") !== -1){console.log("skipping image");return;}
+            if(test.indexOf(".jpg") !== -1){console.log("skipping image");return;}
+            if(test.indexOf(".jpeg") !== -1){console.log("skipping image");return;}
+            if(test.startsWith(baseUrl)){;
+                if(test.indexOf("#") !== -1){console.log("skipping local bookmark");return;}
+                if(test.indexOf(".png") !== -1){console.log("skipping image");return;}
+                if(test.indexOf("image") !== -1){console.log("skipping image");return;}
+                if(test.indexOf(".gif") !== -1){console.log("skipping image");return;}
+                if(test.indexOf(".jpg") !== -1){console.log("skipping image");return;}
+                if(test.indexOf(".jpeg") !== -1){console.log("skipping image");return;}
+                if(test.indexOf("video") !== -1){console.log("skipping video");return;}
+                pagesToVisit.push($(this).attr('href'))
+            }
+            if(testUrl.protocol=''){
+                
+                if(test.indexOf("#") !== -1){console.log("skipping local bookmark");return;}
+                if(test.indexOf(".png") !== -1){console.log("skipping image");return;}
+                if(test.indexOf("image") !== -1){console.log("skipping image");return;}
+                if(test.indexOf(".gif") !== -1){console.log("skipping image");return;}
+                if(test.indexOf(".jpg") !== -1){console.log("skipping image");return;}
+                if(test.indexOf(".jpeg") !== -1){console.log("skipping image");return;}
+                if(test.indexOf("video") !== -1){console.log("skipping video");return;}
+                    var i = test.indexOf('/');
+                if(i > 0){test = test.substring(i);}
+                test = baseUrl + test;console.log("protocol: " + nprotUrl);
+                pagesToVisit.push($(this).attr('href'));                
+            }
         }
     });
 }
