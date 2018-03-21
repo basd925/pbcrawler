@@ -1,14 +1,10 @@
-//ver. 0.02.06 03/18/2018
+//ver. 0.02.05 03/17/2018
 //DEFECT!! not properly updating baseUrl - sometimes works, sometimes not
 //  this is because not adding domain when link is harvested, under internal links
 //  also, need to skip links when found, not at search time
 //DEFECT!! when word found, previously collected inbound links need to be skipped
 //DEFECT!! not closing html on working and working2 (but do we care?)
 //DEFECT!! search on "Andrew McCabe did not yield hits that were there.  "Trump" worked okay, what is problem?
-//DEFECT!! snippets usually print twice and sometimes more than that.  Can't figure out
-//  what triggers the loop, since it does not apparently go back to the found page incrementer.
-//  however, sometimes while it skips the incrementer, it does a different link.
-//  I think there is an issue with sync/async here.
 //need to consider sync/async issues
 //honor robots -- this may need a skip list array
 //divide up domains so we don't access same site repetitively and get blocked?
@@ -17,14 +13,18 @@
 //refine feedback
 //import skip list from text file
 //
-//03/18/2018 - MAJOR CHANGE: code to return text in proximity to the search term
-//03/18/2018 - remove all "<" from HTML in the retrieved text snippet, to prevent
-//03/18/2018 captured html from rendering.
+//03/17/2018 - add search of a seedpage (or seedpages,if linked together).
+//03/17/2018 - skip bing, qwant, bing, youtube, videos, images
+//03/16/2018 - skip 3dcartstores amazon, twitter, facebook, google
+//03/15/2018 - skip no response URLs
+//03/13/2018 - increase max link to 1000
+//03/13/2018 - separate "found" into working.html, "not found" into working2.html
+//03/13/2018 - check for outbound links if search term found, local links if not found
 
 const http = require('http')
 const port = 3000
 
-var version = '0.02.06';
+var version = '0.02.05';
 
 var req = require('request');
 var cheerio = require('cheerio');
@@ -80,9 +80,6 @@ const requestHandler = (request, response) => {
     pagesToVisit = [];
     domainsFound = [];
     domainsVisited = [];
-    bodyTest='';
-    tempText='';
-    tempLength = 0;
     t_url = new URL(START_URL);
     baseUrl = t_url.protocol + "//" + t_url.hostname;
     console.log('what is the domain? ' + t_url.hostname);
@@ -92,8 +89,8 @@ const requestHandler = (request, response) => {
     
 //delete old working.html and open new one
     
-    fs.writeFileSync('public/working.html', '<html><body>Current Search:<br><br>');
-    fs.writeFileSync('public/working2.html', '<html><body>Current Search rejects:<br><br>');
+    fs.writeFileSync('public/working.html', '<html><body>Current Search:<br>');
+    fs.writeFileSync('public/working2.html', '<html><body>Current Search rejects:<br>');
     
 // crawl the internet
 
@@ -164,13 +161,11 @@ server.listen(port, (err) => {
 function crawl() {
   if(numPagesVisited >= MAX_PAGES_TO_VISIT) {
     console.log("Reached max limit number of pages (" + MAX_PAGES_TO_VISIT + ") to visit.");
-    fs.appendFileSync('public/working.html', '<b>Reached max limit number of pages (' + MAX_PAGES_TO_VISIT + ') to visit. <br></b></body></html>');
-    var tempDomains = domainsVisited.toString();
-    tempDomains = tempDomains.replace(/,/g,'<br>');
-    fs.appendFileSync('public/working2.html', '<b>Reached max limit number of pages (' + MAX_PAGES_TO_VISIT + ') to visit.</b> <br><br>' + tempDomains + '<br></body></html>');
+    fs.appendFileSync('public/working.html', '<b>Reached max limit number of pages ' + MAX_PAGES_TO_VISIT + ' to visit. <br></b></body></html>');
+    fs.appendFileSync('public/working2.html', '<b>Reached max limit number of pages ' + MAX_PAGES_TO_VISIT + ' to visit.</b> <br><br>' + domainsVisited + '<br></body></html>');
     console.log('domains visited = ' + numDomainsVisited);
     console.log('pages visited = ' + numPagesVisited)   ;
-//    console.log(domainsVisited);
+    console.log(domainsVisited);
 //    console.log(pagesVisited);
     return;
   }
@@ -236,7 +231,7 @@ function visitPage(t_url, callback) {
   req(t_url, function(error, response, body) {
      // Check status code (200 is HTTP OK)
     if (typeof response ==='undefined'){
-        console.log('no response');fs.appendFileSync('public/working2.html', '<b>oops, defective url at page <a href=' + t_url + '>'+ t_url + '</a>!<br><br></b>');
+        console.log('no response');fs.appendFileSync('public/working2.html', '<b>oops, defective url!<br><br></b>');
         callback();
         return;
     }else{
@@ -247,35 +242,23 @@ function visitPage(t_url, callback) {
         }
         // Parse the document body
         var $ = cheerio.load(body);
-        bodyText = $('html > body').text().toLowerCase();
-
 //load links from any page containing "pbseedpage" -- allows us to build seed pages
         var isWordFound = searchForWord($,'pbseedpage');
         if (!(isWordFound)){
 //if not a seedpage, look for search term
             isWordFound = searchForWord($, SEARCH_WORD);
         }
-        if(isWordFound){
-            numPagesFound++;
-            ii=1;
-            console.log('Word ' + SEARCH_WORD + ' found at page ' + t_url);
-            while (isWordFound) {
-                body = '<b>' + numPagesFound + '. </b>Word "<b>' + SEARCH_WORD + '" found</b> at page <a href=' + t_url + '>'+ t_url + '</a><br>';
-                fs.appendFileSync('public/working.html', body);
-                fs.appendFileSync('public/working.html', tempText + '<br>');
-                isWordFound = searchForWord($, SEARCH_WORD);
-//!!WARNING -- THIS COULD LIMIT VALID RESULTS FROM A SINGLE PAGE
-                if (ii>100){break;}
-                ii++
-            }
-
-
-    //since found and we will look at site later, let's not waste more time here.
+        if(isWordFound) {
+        numPagesFound++;
+        console.log('Word ' + SEARCH_WORD + ' found at page ' + t_url);
+        body = '<b>' + numPagesFound + '. </b>Word "<b>' + SEARCH_WORD + '" found</b> at page <a href=' + t_url + '>'+ t_url + '</a><br>';
+        fs.appendFileSync('public/working.html', body);
+    //since found and we will look at site, let's not waste more time here.
         collectExternalLinks($);
         pagesToVisit = pagesToVisit.filter(fruit => !(fruit.includes(baseUrl)));
 //        console.log('test pages ' + pagesTest);
 //!!! we need to use filter and remove links to this domain from our stack!!!
-        }else{
+        } else {
         body = 'Word "<b>' + SEARCH_WORD + '"</b> not found at page <a href=' + t_url + '>'+ t_url + '</a><br>';
         console.log('Word ' + SEARCH_WORD + ' not found at page ' + t_url);
         fs.appendFileSync('public/working2.html', body);
@@ -290,27 +273,15 @@ function visitPage(t_url, callback) {
 }
 
 function searchForWord($, word) {
-//  var bodyText = $('html > body').text().toLowerCase();
-    var tempLength1 = bodyText.indexOf(word.toLowerCase());
-  if(bodyText.indexOf(word.toLowerCase())){
-      tempLength1 = bodyText.indexOf(word.toLowerCase());
-      tempLength = bodyText.indexOf(word.toLowerCase())-200;
-      if (tempLength < 0){tempLength = 0;}
-      console.log(tempLength1);
-      console.log(tempLength);
-//now we get 100 char before and after search term (but I want to put the search term in bold!)
-      tempText = bodyText.substring(tempLength,tempLength1+200);
-//strip leading '<' to break html -- what we really want is plain text
-      tempText = tempText.replace(/</g,'');
-//get rid of leading portion of page --NEED TO MOVE UP ABOVE because last iteration overlooked
-      bodyText = bodyText.substring(tempLength1+1);
-        console.log('what? ' + bodyText.indexOf(word.toLowerCase()));
-//      console.log('bodyText ' + bodyText);
-    }
-  return(tempLength1 !== -1);
+  var bodyText = $('html > body').text().toLowerCase();
+  console.log(bodyText.indexOf(word.toLowerCase()));
+  return(bodyText.indexOf(word.toLowerCase()) !== -1);
 }
 
 //would it be more efficient to collect all links in one pass and separate them out?
+//note: will not pick up relative links that begin "../"
+
+
 function collectExternalLinks($) {  
 //    var externalLinks = $("a[href^='http']");
     var externalLinks = $('a');
@@ -329,8 +300,6 @@ function collectExternalLinks($) {
             if(test.indexOf("3dcartstores") !== -1){console.log("skipping 3dcartstores");return;}
             if(test.indexOf("amazon.com") !== -1){console.log("skipping amazon");return;}
             if(test.indexOf("bing") !== -1){console.log("skipping bing");return;}
-            if(test.indexOf("bloomberg.com/professional/") !== -1){console.log("skipping bloomberg.com/professional/");return;}
-            if(test.indexOf("disney") !== -1){console.log("skipping disney");return;}
             if(test.indexOf("duckgo") !== -1){console.log("skipping duckduckgo");return;}
             if(test.indexOf("3dcartstores") !== -1){console.log("skipping 3dcartstores");return;}
             if(test.indexOf("google") !== -1){console.log("skipping google");return;}
@@ -341,7 +310,6 @@ function collectExternalLinks($) {
             if(test.indexOf("login") !== -1){console.log("skipping login");return;}
             if(test.indexOf("onecount") !== -1){console.log("skipping onecount");return;}
             if(test.indexOf("qwant") !== -1){console.log("skipping qwant");return;}
-            if(test.indexOf("tumblr") !== -1){console.log("skipping tumblr");return;}
             if(test.indexOf("twitter") !== -1){console.log("skipping twitter");return;}
             if(test.indexOf("youtube") !== -1){console.log("skipping youtube");return;}
             if(test.indexOf("image") !== -1){console.log("skipping image");return;}
@@ -354,7 +322,6 @@ function collectExternalLinks($) {
 //and we are making a list of found base urls so we can go back to the sites randomly rather than sequentially
 //too much activity will get us banned -- another reason we want a large seed list
 //BTW, I use "fruit" because that was the example at the javascript tutorial :-)
-//do I need to test for '' protocol?
             if(!(test.startsWith(baseUrl)) && !(testUrl.protocol ==='') ){
             if(testUrl.protocol.startsWith("http")){
                 test2 = domainsFound.find(fruit => fruit.includes(testUrl.protocol + "//" + testUrl.hostname));
@@ -381,23 +348,18 @@ function collectInternalLinks($) {
     console.log("Found " + internalLinks.length + " internal links on page");
     body = "Found " + internalLinks.length + " internal links on page<br><br>";
     fs.appendFileSync('public/working2.html', body);
-//I wonder if I can reuse ii?
-    var iii=0;
     internalLinks.each(function() {
 //        pagesToVisit.push(baseUrl + $(this).attr('href'));
         var test = $(this).attr('href');
         var testUrl = new URL(test);
 
-//skip empty/undefined/ill formatted
         if(typeof test ==='undefined'){
             
         }else{
-//skip links we don't want to follow
             if(test.indexOf(".png") !== -1){console.log("skipping image");return;}
             if(test.indexOf(".gif") !== -1){console.log("skipping image");return;}
             if(test.indexOf(".jpg") !== -1){console.log("skipping image");return;}
             if(test.indexOf(".jpeg") !== -1){console.log("skipping image");return;}
-//now test self-referencing local links (and is it redundant to put them here?  Why didn't I just put them above?  TRY IT SOON!!!
             if(test.startsWith(baseUrl)){;
                 if(test.indexOf("#") !== -1){console.log("skipping local bookmark");return;}
                 if(test.indexOf(".png") !== -1){console.log("skipping image");return;}
@@ -406,11 +368,8 @@ function collectInternalLinks($) {
                 if(test.indexOf(".jpg") !== -1){console.log("skipping image");return;}
                 if(test.indexOf(".jpeg") !== -1){console.log("skipping image");return;}
                 if(test.indexOf("video") !== -1){console.log("skipping video");return;}
-//we are limiting number of local links to avoid link pollution overload
-                if (iii < 5 ){pagesToVisit.push($(this).attr('href'));}
-                iii++
+                pagesToVisit.push($(this).attr('href'))
             }
-//now test relative links
             if(testUrl.protocol=''){
                 
                 if(test.indexOf("#") !== -1){console.log("skipping local bookmark");return;}
@@ -423,12 +382,9 @@ function collectInternalLinks($) {
                     var i = test.indexOf('/');
                 if(i > 0){test = test.substring(i);}
                 test = baseUrl + test;console.log("protocol: " + nprotUrl);
-//still limiting local links
-                if ( iii < 5 ){pagesToVisit.push($(this).attr('href'));}
-                iii++;
+                pagesToVisit.push($(this).attr('href'));                
             }
         }
-        console.log('limiter total is: ' + iii);
     });
 }
 

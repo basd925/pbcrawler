@@ -1,0 +1,19 @@
+[Desktop Entry]
+Comment[en_US]=launch pbcrawler
+Comment=launch pbcrawler
+Exec=/home/[add your user name here!]/bin/launch/bin1/pbcrawler
+GenericName[en_US]=launch pbcrawler
+GenericName=launch pbcrawler
+Icon=applications-internet
+MimeType=
+Name[en_US]=launch pbcrawler
+Name=launch pbcrawler
+Path=
+StartupNotify=true
+Terminal=false
+TerminalOptions=
+Type=Application
+X-DBUS-ServiceName=
+X-DBUS-StartupType=
+X-KDE-SubstituteUID=false
+X-KDE-Username=

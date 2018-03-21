@@ -1,0 +1,20 @@
+#!/bin/bash
+##edit following line to the location of your node server
+cd ~/data/computers/node2
+##
+kdialog --title "pbcrawler startup" --yesno "start pbcrawler??" 6 25
+if [ $? = 0 ]; then
+  echo $?
+##xterm closes on exit but can't scroll output
+##konsole allows scroll of output, but does not close when server is killed
+  xterm -e node server.js &
+##    konsole -e node server.js &
+  kdialog --title "server running" --yesno "stop server?"
+  if [ $? = 0 ]
+  then
+      pkill "node-default"
+  fi
+fi
+
+
+exit 0
