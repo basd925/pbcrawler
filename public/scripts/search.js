@@ -2,8 +2,9 @@
 function getSearch() {
     var x = document.getElementById("frm1");
     var site = x.elements[0].value;
-    var terms = x.elements[1].value;
-    var num = x.elements[2].value;
+    if(x.elements[0].value===""){site = x.elements[1].value;}
+    var terms = x.elements[2].value;
+    var num = x.elements[3].value;
     var search = 'site=' + site + '&terms='+ terms + '&num=' + num; 
     text = '<img src="images/bjm1.jpeg" alt="BJM" style="float:left; padding:10px; width:100px;"><b>Rocky, watch me pull a rabbit out of my hat!!!! <br> searching:</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;' + search ; 
     document.getElementById("demo").innerHTML = text;
