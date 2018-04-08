@@ -1,4 +1,4 @@
-//ver. 0.03.01 03/27/2018
+//ver. 0.03.04 04/04/2018
 //NOTE:  TO COPY CONSOLE TO LOGFILE, RUN AS "node server.js | tee public/log-file.txt
 //DEFECT!! when word found, previously collected inbound links need to be skipped
 //DEFECT!! search on "Andrew McCabe did not yield hits that were there.  "Trump" worked okay, what is problem?
@@ -8,27 +8,26 @@
 //add stat analysis
 //import skip list from text file
 //xml skins for b2evo/wp?
-//need to delete similar links when hit "already visited, because may have added same multiple times
-//or ... check to see if link already in list before adding?  Already in to visit OR already in visited
-//!!need to process and follow links where the text found is actually the display text in the link!!
-//03/27/2018 - list link once for multiple instances of word on page
-//03/27/2018 - convert images to links (will not work if no "alt" entry!)
-//03/27/2018 - found word shown in boldface
-//03/27/2018 - added link to search page to view logfile, see above for how to generate
-//03/20/2018 - limit loop to pick up only [4] internal links to get more variety of sites
-//03/18/2018 - MAJOR CHANGE: code to return text in proximity to the search term
-//03/18/2018 - remove all "<" from HTML in the retrieved text snippet, to prevent
-//03/18/2018 captured html from rendering.
+//need to delete similar links when hit "already visited, because may have added same multiple times?
+//!!need to process and follow links where the search term(s) are found in the link name
+//need to add priority links at other times than newsfeed
+//need routine to make new directory for new search name
+
+//04/07/2018 - clean up notfound log
+//04/04/2018 - added custom user agent, maybe (need to check)
+//04/04/2018 - for loop - skipWords skip_words.txt list
+//04/03/2018 - save priority, run priority links first
 
 const http = require('http')
 const port = 3000
 
-var version = '0.03.01';
+var version = '0.03.04';
 
 var req = require('request');
 var cheerio = require('cheerio');
 var path = require('path');
 var fs = require('fs');
+var parse_xml = require('./parse_xml');
 
 //do I need both of these? Are they actually different?
 
@@ -42,9 +41,11 @@ var START_URL;
 var SEARCH_WORD;
 var MAX_PAGES_TO_VISIT = 10;
 
-var pagesVisited = {};
+//var pagesVisited = {};
 var numPagesVisited = 0;
-var pagesToVisit;
+//pagesToVisit = [];
+html_links = [];
+//priority_links = [];
 var ii =0;
 var t_url = new URL(START_URL);
 var baseUrl = t_url.protocol + "//" + t_url.hostname;
@@ -58,16 +59,21 @@ const requestHandler = (request, response) => {
     var q = url.parse(request.url, true);
 //  console.log(q);
     var pathname = q.pathname;
+    var q_name = q.query.name;
     var req_site = q.query.site;
     var search_terms = q.query.terms;
     var link_num = q.query.num;
 
     
   if (typeof req_site !== 'undefined') {
-    if (search_terms ===''){console.log('oops');fs.writeFileSync('public/working2.html', '<html><body><b>oops, no search terms!</b></body></html>');return; }
+    if (search_terms ===''){console.log('oops');fs.append(search_file +'_working.html', '<html><body><b>oops, no search terms!</b></body></html>');return; }
+    search_file = 'public/' + q_name + '/' + search_terms.replace(/ /g,'_');
+    search_page = q_name + '/' + search_terms.replace(/ /g,'_');
+    console.log(search_file);
     console.log(req_site);
     console.log(search_terms);
     console.log(link_num);
+    
     START_URL = req_site;
     SEARCH_WORD = search_terms;
     wordLength = SEARCH_WORD.length;
@@ -76,8 +82,49 @@ const requestHandler = (request, response) => {
     numDomainsVisited = 0;
     numPagesFound = 1;
     ii = 1;
-    pagesVisited = {};
+        
+    pagesVisited = [];
+    
+//if prior pagesVisited exists, import 
+    if (fs.existsSync(search_file + '_visited.txt')) {
+        console.log('visited exists')
+        pagesVisited = fs.readFileSync(search_file + '_visited.txt').toString().split("\n");
+//add a nonsense place holder at beginninig of file to solve problem of not skipping a site because it is found at 0
+        pagesVisited.unshift('http://example.co.us.com');
+//if we want to show them on console 
+//       for(i in pagesVisited) {
+//           console.log(pagesVisited[i]);
+//        }  
+    }else{console.log('no existing pagesVisited!');}
+    
+
+    skipWords = fs.readFileSync('skip_words.txt').toString().split("\n");
+
     pagesToVisit = [];
+
+//if prior pagesToVisit exists, import 
+    if (fs.existsSync(search_file + '_to_visit.txt')) {
+        console.log('to visit exists')
+        pagesToVisit = fs.readFileSync(search_file + '_to_visit.txt').toString().split("\n");
+//if we want to show them on console 
+//       for(i in pagesToVisit) {
+//           console.log(pagesVisited[i]);
+//        }  
+    }else{console.log('no existing pagesToVisit!');}
+
+    priority_links = [];
+
+//if prior priority_links exists, import 
+    if (fs.existsSync(search_file + '_priority.txt')) {
+        console.log('priority links exists')
+        priority_links = fs.readFileSync(search_file + '_to_visit.txt').toString().split("\n");
+//if we want to show them on console 
+//       for(i in priority_links) {
+//           console.log(priority_links[i]);
+//        }  
+    }else{console.log('no existing priority links!');}
+    
+
     domainsFound = [];
     domainsVisited = [];
     bodyTest='';
@@ -90,10 +137,17 @@ const requestHandler = (request, response) => {
     console.log('choosedomain = ' + chooseDomain);
     pagesToVisit.push(START_URL);
     
-//delete old working.html and open new one
-    
-    fs.writeFileSync('public/working.html', '<html><head><meta http-equiv="content-type" content="text/html;charset=utf-8" /></head><body>Current Search:<br><br>');
-    fs.writeFileSync('public/working2.html', '<html><body>Current Search rejects:<br><br>');
+//add to existing search (or start new)
+
+//add search page to index if starting new earch    
+    if (fs.existsSync(search_file + '.html')) {console.log('search exists!');}else{
+        console.log('appending');
+        console.log('public/' + q_name + '/index.html');
+        fs.appendFileSync('public/' + q_name + '/index.html', '<a href=../'+ search_page + '.html>'+ search_page + '.html</a><br>\n');
+    }
+
+    fs.appendFileSync(search_file + '.html', '<html><head><meta http-equiv="content-type" content="text/html;charset=utf-8" /></head><body>Current Search:<br><br>');
+    fs.appendFileSync(search_file + '_working.html', '<html><body>Current Search rejects:<br><br>');
     
 // crawl the internet
 
@@ -110,9 +164,8 @@ const requestHandler = (request, response) => {
   }
   
   if (request.method === 'GET' && pathname === '/update') {
-        response.end('<iframe height="500" width="600" src="working.html" ></iframe><br><b>Um ... How fast da ya '
+        response.end('<iframe height="500" width="600" src="' + search_page + '.html" ></iframe><br><b>Um ... How fast da ya '
         + 'think we are??????</b>');
-    return;
 
   }
   var SITE = path.join(__dirname, 'public', pathname);
@@ -165,38 +218,61 @@ server.listen(port, (err) => {
 function crawl() {
   if(numPagesVisited >= MAX_PAGES_TO_VISIT) {
     console.log("Reached max limit number of pages (" + MAX_PAGES_TO_VISIT + ") to visit.");
-    fs.appendFileSync('public/working.html', '<b>Reached max limit number of pages (' + MAX_PAGES_TO_VISIT + ') to visit. <br></b></body></html>');
+    fs.appendFileSync(search_file +'.html', '<b>Reached max limit number of pages (' + MAX_PAGES_TO_VISIT + ') to visit. <br></b></body></html>');
     var tempDomains = domainsVisited.toString();
     tempDomains = tempDomains.replace(/,/g,'<br>');
-    fs.appendFileSync('public/working2.html', '<b>Reached max limit number of pages (' + MAX_PAGES_TO_VISIT + ') to visit.</b> <br><br>' + tempDomains + '<br></body></html>');
+    fs.appendFileSync(search_file +'_working.html', '<b>Reached max limit number of pages (' + MAX_PAGES_TO_VISIT + ') to visit.</b> <br><br>' + tempDomains + '<br></body></html>');
     console.log('domains visited = ' + numDomainsVisited);
     console.log('pages visited = ' + numPagesVisited)   ;
-//    console.log(domainsVisited);
-//    console.log(pagesVisited);
     return;
   }
-  
-    
-//find a domain in pagesToVisit and select one of those
-    chooseDomain = baseUrl;
-//pick a random domain to revisit.  But first we need a list of domains we have found to randomize.
-    if (numDomainsVisited > 1){chooseDomain = domainsFound[Math.floor(Math.random() * domainsVisited.length)];}
-    var foundDomain = pagesToVisit.find(fruit => fruit.includes(chooseDomain));
-    var foundDomainIndex = pagesToVisit.findIndex(fruit => fruit.includes(chooseDomain));
-    console.log('selected domain is ' + chooseDomain + ' at ' + foundDomainIndex);
 
-//if we can extract a found link, do it (not useful until we have an array of domains to check against)
-//otherwise just use next link in order
-    if (foundDomainIndex > 0){
-        var nextPage = pagesToVisit.splice(foundDomainIndex,1);
-        
+//pick a random domain from our found links, if we have a pending list of domains found
+//NOTE: should we save the domain list for saved states, too? Probably.
+  chooseDomain = baseUrl;
+   if (numDomainsVisited > 1){chooseDomain = domainsFound[Math.floor(Math.random() * domainsVisited.length)];}
+
+//Use priority_links if not empty, otherwise, use pagesToVisit
+   if (priority_links.length ===0){
+
+//find a domain in pagesToVisit and select one of those
+    //pick a random domain to revisit.  But first we need a list of domains we have found to randomize.
+//        var foundDomain = pagesToVisit.find(fruit => fruit.includes(chooseDomain));
+        var foundDomainIndex = pagesToVisit.findIndex(fruit => fruit.includes(chooseDomain));
+        console.log('selected domain is ' + chooseDomain + ' at ' + foundDomainIndex);
+
+    //if we can extract a found link, do it (not useful until we have an array of domains to check against)
+    //otherwise just use next link in order
+        if (foundDomainIndex > 0){
+            var nextPage = pagesToVisit.splice(foundDomainIndex,1);
+            
+        }else{
+            var nextPage = pagesToVisit.shift();
+        }
     }else{
-        var nextPage = pagesToVisit.shift();
+
+//find a domain in priority_links and select one of those
+    //pick a random domain to revisit.  But first we need a list of domains we have found to randomize.
+//        var foundDomain = pagesToVisit.find(fruit => fruit.includes(chooseDomain));
+        var foundDomainIndex = priority_links.findIndex(fruit => fruit.includes(chooseDomain));
+        console.log('selected domain is ' + chooseDomain + ' at ' + foundDomainIndex);
+
+    //if we can extract a found link, do it (not useful until we have an array of domains to check against)
+    //otherwise just use next link in order
+        if (foundDomainIndex > 0){
+            var nextPage = priority_links.splice(foundDomainIndex,1);
+            
+        }else{
+            var nextPage = priority_links.shift();
+        }
+        
     }
+    
     console.log('next URL ' +nextPage);
     
+    
 //check if out of pages
-  if (typeof nextPage ==='undefined'){console.log('no page');fs.appendFileSync('public/working.html', '<b>no more sites!</b></body></html>');return;}
+  if (typeof nextPage ==='undefined'){console.log('no page');fs.appendFileSync(search_file + '.html', '<b>no more sites!</b></body></html>');return;}
   
 //otherwise, update baseUrl
 //  need url format
@@ -214,31 +290,50 @@ function crawl() {
   if( nprotUrl ==='' ){
     var i = nextPage.indexOf('/');
     if(i > 0){nextPage = nextPage.substring(i);}
-    nextPage = baseUrl + nextPage;console.log("protocol: " + nprotUrl);
-    }
-  if (nextPage in pagesVisited) {
-      console.log('already visited');
-    // We've already visited this page, so repeat the crawl
-    crawl();
-  } else {
-    // New page we haven't visited
-    visitPage(nextPage, crawl);
+    nextPage = baseUrl + nextPage;console.log
+    ("protocol: " + nprotUrl);
+    console.log('relative link fixed ' + nextPage);
   }
+// output of entire pagesVisted is messy
+//    console.log(pagesVisited);
+    
+//skip if we have visited    
+// PROBLEM:  If a URL contains the next URL, then it will skip it.  How do I fix this?
+// PROBLEM: if a site is found at the zero position, then it should be skipped but isn't -- may be cured by unshift entry up above
+    var pagesVisitedIndex = pagesVisited.findIndex(fruit => fruit.includes(nextPage));
+    if (pagesVisitedIndex > 0){
+        console.log('visited')
+        crawl();
+    }else{
+        console.log('not visited')
+        visitPage(nextPage, crawl);
+    }
+
 }
 
 function visitPage(t_url, callback) {
   // Add page to our set
-  pagesVisited[t_url] = true;
+  pagesVisited.push(t_url);
+//  pagesVisited[t_url] = true;
+  fs.appendFileSync(search_file + '_visited.txt',t_url + '\n');
   numPagesVisited++;
 
   // Make the request
-  if (typeof t_url ==='undefined'){console.log('no page');fs.appendFileSync('public/working.html', '<b>no more sites!</b></body></html>');return;}
+  if (typeof t_url ==='undefined'){console.log('no page');fs.appendFileSync(search_file + '.html', '<b>no more sites!</b></body></html>');return;}
   console.log("Visiting page " + t_url);
-  req(t_url, function(error, response, body) {
+//provide custom header for pbcrawler
+  var options = {
+  url: t_url,
+  headers: {
+    'User-Agent': 'personal webcrawler'
+  }
+};
+//  req(t_url, function(error, response, body) {
+  req(options, function(error, response, body) {
      // Check status code (200 is HTTP OK)
     if (typeof response ==='undefined'){
-        console.log('no response');fs.appendFileSync('public/working2.html', '<b>no response at page <a href=' + t_url + '>'+ t_url + '</a>!<br><br></b>');
-        fs.appendFileSync('public/working.html', '<b>no response at page <a href=' + t_url + '>'+ t_url + '</a>!<br><br></b>');
+        console.log('no response');fs.appendFileSync(search_file +'_working.html', '<b>no response at page <a href=' + t_url + '>'+ t_url + '</a>!<br><br></b>');
+//        fs.appendFileSync(search_file + '.html', '<b>no response at page <a href=' + t_url + '>'+ t_url + '</a>!<br><br></b>');
         callback();
         return;
     }else{
@@ -247,27 +342,56 @@ function visitPage(t_url, callback) {
         callback();
         return;
         }
-        // Parse the document body
+// Parse the document body
         var $ = cheerio.load(body);
         bodyText = $('html > body').text().toLowerCase();
 
+//test for xml feed and provide handler (primarily google)
+//NOTE: there are other xml cases this doesn't test for
+        if (t_url.indexOf('/rss') !==-1){
+//            console.log(typeof parse_xml.parse_xml);
+//            console.log('rss');
+            newXml = body;
+            parse_xml.print_xml(newXml);
+            parse_xml.xml_links(newXml);
+//            console.log(pagesToVisit);
+//put links in results page            
+            for (var i=0,  tot=html_links.length; i < tot; i++) {
+                fs.appendFileSync(search_file + '.html', html_links[i] + '<br>\n');
+            }
+            fs.appendFileSync(search_file + '.html', '<br>');
+            
+//save that we have visited this page
+            pagesVisited.push(t_url);
+            fs.appendFileSync(search_file + '_visited.txt',t_url + '\n');
+            numPagesVisited++;
+            callback();
+            return;
+        }
 //load links from any page containing "pbseedpage" -- allows us to build seed pages
         var isWordFound = searchForWord($,'pbseedpage');
         if (!(isWordFound)){
 //if not a seedpage, look for search term
             isWordFound = searchForWord($, SEARCH_WORD);
-        }else{numPagesFound--;}
+        }else{
+//if it's a pbseedpage, rollback counter for correct found page numbering
+            numPagesFound--;
+//if we are starting with seedpage, add a google news feed based on search terms to the stack:
+            test = 'https://news.google.com/news/rss/search/section/q/' + SEARCH_WORD;
+            console.log('newsfeed: ' + test);
+            pagesToVisit.push(test);
+        }
         if(isWordFound){
             console.log('Word ' + SEARCH_WORD + ' found at page ' + t_url);
             body = '<b>' + numPagesFound + '. <a href=' + t_url + '>'+ t_url + '</a></b><br>';
             if (numPagesFound > 0){
-                fs.appendFileSync('public/working.html', body);
+                fs.appendFileSync(search_file + '.html', body);
             }
             numPagesFound++;
             ii=1;
             while (isWordFound) {
                 if (numPagesFound > 1){
-                    fs.appendFileSync('public/working.html', tempText + '<br><br>');
+                    fs.appendFileSync(search_file + '.html', tempText + '<br><br>');
                 }
                 isWordFound = searchForWord($, SEARCH_WORD);
     //!!WARNING HIS COULD LIMIT VALID RESULTS FROM A SINGLE PAGE
@@ -275,19 +399,27 @@ function visitPage(t_url, callback) {
                 ii++
             }
 
-
     //since found and we will look at site later, let's not waste more time here.
         collectExternalLinks($);
 //I removed the following line because it prevents following links to the actual story on the page.  Need to find another way to do this!!!
+//(purpose is to remove further links to this page because we are going to go look at it anyway.
 //        pagesToVisit = pagesToVisit.filter(fruit => !(fruit.includes(baseUrl)));
-//        console.log('test pages ' + pagesTest);
-//!!! we need to use filter and remove links to this domain from our stack!!! -- this is elsewhere, commented out
         }else{
         body = 'Word "<b>' + SEARCH_WORD + '"</b> not found at page <a href=' + t_url + '>'+ t_url + '</a><br>';
         console.log('Word ' + SEARCH_WORD + ' not found at page ' + t_url);
-        fs.appendFileSync('public/working2.html', body);
+        fs.appendFileSync(search_file +'_working.html', body);
     //since word not found, let's check the rest of the website
         collectInternalLinks($);
+        }
+//SAVE LINKS TO FOLLOW HERE for saved state - why only one showing up?
+//        console.log(pagesToVisit);
+        fs.writeFileSync(search_file + '_priority.txt','');
+        for (var i=0,  tot=priority_links.length; i < tot; i++) {
+            fs.appendFileSync(search_file + '_priority.txt', priority_links[i] + '\n');
+        }
+        fs.writeFileSync(search_file + '_to_visit.txt','');        
+        for (var i=0,  tot=pagesToVisit.length; i < tot; i++) {
+            fs.appendFileSync(search_file + '_to_visit.txt', pagesToVisit[i] + '\n');
         }
         // In this short program, our callback is just calling crawl()
         callback();
@@ -313,6 +445,9 @@ function searchForWord($, word) {
             tempText = tempText.replace(/src/g,'<a href');
             tempText = tempText.replace(/alt=/g,'>') + '</a>';
         }
+//REMOVE SUBJECTIVE ADJECTIVES, ETC. HERE
+
+//REMOVE WHITE SPACE HERE
 
 //get rid of leading portion of page -- is last iteration overlooked?? Why did I suspect that?
       bodyText = bodyText.substring(tempLength1+1);
@@ -338,7 +473,28 @@ function collectExternalLinks($) {
             return;
         }else{
 //here is our ignore list -- it needs to be rewritten to load from an ignore list file
-//ignoring useless links is critical    
+//ignoring useless links is critical
+            //skip if we have visited    
+
+// PROBLEM:  If a URL contains the next URL, then it will skip it.  How do I fix this?
+// PROBLEM: if a site is found at the zero position, then it should be skipped but isn't -- may be cured by unshift entry up above
+            var pagesVisitedIndex = pagesVisited.findIndex(fruit => fruit.includes(test));
+            if (pagesVisitedIndex > 0){
+                console.log(test + ' visited')
+                return;
+            }
+//skip if listed
+            var pagesToVisitIndex = pagesToVisit.findIndex(fruit => fruit.includes(test));
+            if (pagesToVisitIndex > 0){
+                console.log(test + ' already in list')
+                return;
+            }
+    
+            for (var i = 0, len = skipWords.length; i < len; i++) {
+//                if(test.indexOf(skipWords[i]) > 0 ){console.log('response ' + test.indexOf(skipWords[i]) +' ' +skipWords[i]);}
+                if(test.indexOf(skipWords[i]) > 0){console.log("skipping " + skipWords[i]);return;}
+            }
+
             if(test.indexOf("3dcartstores") !== -1){console.log("skipping 3dcartstores");return;}
             if(test.indexOf("amazon.com") !== -1){console.log("skipping amazon");return;}
             if(test.indexOf("bing") !== -1){console.log("skipping bing");return;}
@@ -359,6 +515,7 @@ function collectExternalLinks($) {
             if(test.indexOf("linkedin") !== -1){console.log("skipping linkedin");return;}
             if(test.indexOf("login") !== -1){console.log("skipping login");return;}
             if(test.indexOf("menu") !== -1){console.log("skipping menu");return;}
+            if(test.indexOf("mailto") !== -1){console.log("skipping mailto");return;}
             if(test.indexOf("onecount") !== -1){console.log("skipping onecount");return;}
             if(test.indexOf("privacy") !== -1){console.log("skipping privacy");return;}
             if(test.indexOf("qwant") !== -1){console.log("skipping qwant");return;}
@@ -370,6 +527,7 @@ function collectExternalLinks($) {
             if(test.indexOf("truste.com") !== -1){console.log("skipping truste.com");return;}
             if(test.indexOf("twitter") !== -1){console.log("skipping twitter");return;}
             if(test.indexOf("youtu") !== -1){console.log("skipping youtube");return;}
+            if(test.indexOf("vine.co") !== -1){console.log("skipping vine.co");return;}
             if(test.indexOf("wholefoods") !== -1){console.log("skipping wholefoods");return;}
             if(test.indexOf("woot") !== -1){console.log("skipping woot");return;}
             if(test.indexOf("image") !== -1){console.log("skipping image");return;}
@@ -437,7 +595,7 @@ function collectInternalLinks($) {
     var internalLinks = $('a');
     console.log("Found " + internalLinks.length + " internal links on page");
     body = "Found " + internalLinks.length + " internal links on page<br><br>";
-    fs.appendFileSync('public/working2.html', body);
+    fs.appendFileSync(search_file +'_working.html', body);
 //I wonder if I can reuse ii?
     var iii=0;
     internalLinks.each(function() {
@@ -450,6 +608,25 @@ function collectInternalLinks($) {
             
         }else{
 //skip links we don't want to follow
+            var pagesVisitedIndex = pagesVisited.findIndex(fruit => fruit.includes(test));
+            if (pagesVisitedIndex > 0){
+                console.log(test + ' visited')
+                return;
+            }
+//skip if listed
+            var pagesToVisitIndex = pagesToVisit.findIndex(fruit => fruit.includes(test));
+            if (pagesToVisitIndex > 0){
+                console.log(test + ' already in list')
+                return;
+            }
+
+//skip if in skip_words.txt
+            for (var i = 0, len = skipWords.length; i < len; i++) {
+//                if(test.indexOf(skipWords[i])>0){console.log('response ' + test.indexOf(skipWords[i]) +' ' +skipWords[i]);}
+                if(test.indexOf(skipWords[i]) > 0 ){console.log("skipping " + skipWords[i]);return;}
+            }
+//skip these too (which could move to skip_words.txt
+//NOTE: should there be different skip lists for internal and external lists?
             if(test.indexOf(".png") !== -1){console.log("skipping image");return;}
             if(test.indexOf(".gif") !== -1){console.log("skipping image");return;}
             if(test.indexOf(".jpg") !== -1){console.log("skipping image");return;}

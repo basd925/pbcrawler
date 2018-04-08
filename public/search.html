@@ -3,38 +3,57 @@
   <head>
     <meta charset="utf-8">
     <title>search</title>
-    <link href="styles/style.css" rel="stylesheet" type="text/css">s
+    <link href="styles/style.css" rel="stylesheet" type="text/css">
     <script src="scripts/search.js"></script>
   </head>
     <body>
         <h1>Search the Bunny Run!!</h1>
-    <p style="align:right; float:right"> <a href="working.html"
-        target="one">found results</a><br>
-      <a href="working2.html" target="one">not found results</a><br>
-      <a href="log-file.txt" target="one">logfile</a> </p>
-    <form id="frm1" action=""> <b>Enter Start Site: <input name="site"
-          size="45" type="url"> &nbsp;&nbsp;&nbsp;&nbsp;-OR-<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Select:
-
-      </b>
-      <select name="site">
-        <option value="" selected="selected">make selection here</option>
-        <option value="http://localhost:3000/politics.html">http://localhost:3000/politics.html</option>
-        <option value="http://pinkbunnybinky.com">http://pinkbunnybinky.com</option>
-        <option value="http://foreignpolicy.com">http://foreignpolicy.com</option>
-        <option value="http://localhost:3000/financial.html">http://localhost:3000/financial.html</option>
-        <option value="http://localhost:3000/testing.html">http://localhost:3000/testing.html</option>
-      </select>
-      <br>
-      &nbsp;&nbsp;&nbsp;<b>Search Terms:</b> <input name="terms"
-        type="text"><b>links to check (less than 1000)</b> <input name="num"
-        size="4" value="10" min="1" max="999" type="number"><br>
-      <br>
+        <div style="text-align:center"><i>search made personal</i><br><br></div>
+        <div style="float:right">
+            <p id="result1">
+            </p> 
+            <p>
+                <a href="working2.html" target="one">not found results</a><br>
+                <a href="log-file.txt" target="one">logfile</a> 
+            </p>
+        </div>
+    <form id="frm1" action="">
+        <table>
+            <tr>
+                <td style="text-align:right"><b>name your search: </b></td><td><input name="name" size="45" type="url" value="default"></td>
+            </tr>
+            <tr>
+                <td></td><td><b><i>failure to give search unique name will overwrite search with same search terms!!!</i></b></td>
+            </tr>
+            <tr>
+                <td style="text-align:right"><b>Enter Start Site:</b></td> 
+                <td><input name="site" size="45" type="url">&nbsp;&nbsp;&nbsp;&nbsp;<b>-OR-</b></td>
+            </tr>
+            <tr>
+                <td style="text-align:right"><b>Select:</b></td>
+                <td>
+                    <select name="site">
+                        <option value="" selected="selected">make selection here</option>
+                        <option value="http://localhost:3000/politics.html">http://localhost:3000/politics.html</option>
+                        <option value="http://pinkbunnybinky.com">http://pinkbunnybinky.com</option>
+                        <option value="http://foreignpolicy.com">http://foreignpolicy.com</option>
+                        <option value="http://localhost:3000/financial.html">http://localhost:3000/financial.html</option>
+                        <option value="http://localhost:3000/testing.html">http://localhost:3000/testing.html</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align:right"><b>Search Terms:</b></td>
+                <td>
+                    <input name="terms" type="text"><b>links to check (less than 1000)</b> <input name="num" size="4" value="10" min="1" max="999" type="number">
+                
+                </td>
+            </tr>
+         </table>
     </form>
 <br>
 
         <button onclick="getSearch()">Process</button>  <button onclick="slowAlert()">Update</button>    <button onclick="window.location.reload()">Clear</button><br><br> 
-
         <p id="demo"></p>
 
         <p id="demo1"></p>
